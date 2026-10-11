@@ -1,0 +1,6 @@
+{
+  "name": "EquiScan Global - Horse Racing Results & Instant Scanner",
+  "description": "Worldwide horse racing results, live track fixtures, and instant AI photo camera scanner for racing slips and racecards with bilingual Sinhala and English support.",
+  "requestFramePermissions": ["camera"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
