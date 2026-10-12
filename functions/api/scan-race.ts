@@ -136,6 +136,10 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
     const result = await aiResponse.json() as any;
 
     if (!aiResponse.ok) {
+      console.error('[RaceScan Gemini error]', JSON.stringify({
+        status: aiResponse.status,
+        message: result?.error?.message || 'No error message returned',
+      }));
       return Response.json({
         success: false,
         error: result?.error?.message || 'Gemini API request failed',
