@@ -122,7 +122,7 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
                 },
               },
               {
-                text: 'Read this horse racing betting slip image. Extract only information visibly supported by the image. Do not guess the result or invent a horse, track, finishing position, odds, jockey, trainer, or payout. If the image does not show an official result, use finishStatus UNKNOWN and finishPosition null. Return JSON with keys success, detectedHorseName, detectedHorseNameSi, detectedTrack, detectedTrackSi, raceDate, raceNumber, betType, finishPosition, finishStatus, margin, odds, payout, jockey, trainer, confidenceScore, extractedRawText, sinhalaExplanation, englishExplanation. Use strings for unknown text values as empty strings, and null for unknown finishPosition.',
+                text: 'Analyze this image carefully. First decide whether it visibly contains a horse-racing betting slip or horse-racing result document. Handwritten slips are allowed: read handwriting cautiously and use only text you can actually see. Do not invent or guess horse names, racecourses, dates, race numbers, results, odds, jockeys, trainers, or payouts. If this is not clearly a horse-racing slip, or the horse name and racecourse cannot be read, return JSON with success false, isHorseRacingTicket false when not a racing slip (true only when clearly a racing slip), and empty strings for unknown fields. Never infer a WIN/PLACE/LOST result from a bet slip alone; unless an official result is visible, finishStatus must be UNKNOWN and finishPosition null. Return JSON with keys success, isHorseRacingTicket, detectedHorseName, detectedHorseNameSi, detectedTrack, detectedTrackSi, raceDate, raceNumber, betType, finishPosition, finishStatus, margin, odds, payout, jockey, trainer, confidenceScore, extractedRawText, sinhalaExplanation, englishExplanation. Use empty strings for unknown text and null for unknown finishPosition.',
               },
             ],
           }],
@@ -153,10 +153,49 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
       );
     }
 
-    const parsed = JSON.parse(text);
+    let parsed: any;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return Response.json({
+        success: false,
+        error: 'Could not read the scan response. Please try a clearer photo.',
+      }, { status: 422 });
+    }
+
+    const horseName = typeof parsed.detectedHorseName === 'string'
+      ? parsed.detectedHorseName.trim()
+      : '';
+    const trackName = typeof parsed.detectedTrack === 'string'
+      ? parsed.detectedTrack.trim()
+      : '';
+    const rawText = typeof parsed.extractedRawText === 'string'
+      ? parsed.extractedRawText.trim()
+      : '';
+
+    if (
+      parsed.success !== true ||
+      parsed.isHorseRacingTicket === false ||
+      !horseName ||
+      !trackName ||
+      !rawText
+    ) {
+      return Response.json({
+        success: false,
+        error: 'Could not recognize a valid horse racing ticket. Please try a clearer photo.',
+      }, { status: 422 });
+    }
 
     return Response.json({
       ...parsed,
+      detectedHorseName: horseName,
+      detectedTrack: trackName,
+      finishPosition: Number.isInteger(parsed.finishPosition)
+        ? parsed.finishPosition
+        : null,
+      finishStatus: ['WIN', 'PLACE', 'LOST', 'UPCOMING', 'UNKNOWN'].includes(parsed.finishStatus)
+        ? parsed.finishStatus
+        : 'UNKNOWN',
       success: true,
       source: 'ai_vision',
       scannedAt: new Date().toISOString(),
