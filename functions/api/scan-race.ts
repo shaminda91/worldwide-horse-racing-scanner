@@ -174,7 +174,6 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
       : '';
 
     if (
-      parsed.success !== true ||
       parsed.isHorseRacingTicket === false ||
       !horseName ||
       !trackName ||
