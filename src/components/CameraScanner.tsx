@@ -209,7 +209,20 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         body: JSON.stringify(payload),
       });
 
-      const data: ScanDetectionResult = await response.json();
+      const data = await response.json();
+
+      if (!response.ok || data.success !== true ||
+          !String(data.detectedHorseName || '').trim() ||
+          !String(data.detectedTrack || '').trim()) {
+        setIsScanning(false);
+        setScanStep(0);
+        alert(
+          currentLang === 'si'
+            ? 'වලංගු Horse Racing ticket එකක් හඳුනාගත නොහැක. පැහැදිලි ticket photo එකක් උත්සාහ කරන්න.'
+            : 'Could not recognize a valid horse racing ticket. Please try a clear ticket photo.'
+        );
+        return;
+      }
 
       setTimeout(() => {
         setIsScanning(false);
@@ -219,7 +232,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
         } else {
           sfx.playScanBlip();
         }
-        onScanComplete(data);
+        onScanComplete(data as ScanDetectionResult);
       }, 1400);
     } catch (err) {
       console.error('API call failed, fallback used:', err);
