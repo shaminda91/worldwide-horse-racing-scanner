@@ -113,7 +113,7 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
           'x-goog-api-key': env.GEMINI_API_KEY,
         },
         body: JSON.stringify({
-          model: 'gemini-3.8-flash',
+          model: 'gemini-3.6-flash',
           input: [
             {
               type: 'image',
