@@ -105,7 +105,7 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
     const cleanBase64 = imageBase64!.replace(/^data:[^;]+;base64,/, '');
 
     const aiResponse = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+      'https://generativelanguage.googleapis.com/v1beta/interactions',
       {
         method: 'POST',
         headers: {
@@ -113,28 +113,23 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
           'x-goog-api-key': env.GEMINI_API_KEY,
         },
         body: JSON.stringify({
-          contents: [{
-            parts: [
-              {
-                inline_data: {
-                  mime_type: mimeType,
-                  data: cleanBase64,
-                },
-              },
-              {
-                text: 'Analyze this image carefully. First decide whether it visibly contains a horse-racing betting slip or horse-racing result document. Handwritten slips are allowed: read handwriting cautiously and use only text you can actually see. Do not invent or guess horse names, racecourses, dates, race numbers, results, odds, jockeys, trainers, or payouts. If this is not clearly a horse-racing slip, or the horse name and racecourse cannot be read, return JSON with success false, isHorseRacingTicket false when not a racing slip (true only when clearly a racing slip), and empty strings for unknown fields. Never infer a WIN/PLACE/LOST result from a bet slip alone; unless an official result is visible, finishStatus must be UNKNOWN and finishPosition null. Return JSON with keys success, isHorseRacingTicket, detectedHorseName, detectedHorseNameSi, detectedTrack, detectedTrackSi, raceDate, raceNumber, betType, finishPosition, finishStatus, margin, odds, payout, jockey, trainer, confidenceScore, extractedRawText, sinhalaExplanation, englishExplanation. Use empty strings for unknown text and null for unknown finishPosition.',
-              },
-            ],
-          }],
-          generationConfig: {
-            responseMimeType: 'application/json',
-          },
+          model: 'gemini-3.8-flash',
+          input: [
+            {
+              type: 'image',
+              mime_type: mimeType,
+              data: cleanBase64,
+            },
+            {
+              type: 'text',
+              text: 'Analyze this image carefully. First decide whether it visibly contains a horse-racing betting slip or horse-racing result document. Handwritten slips are allowed: read handwriting cautiously and use only text you can actually see. Do not invent or guess horse names, racecourses, dates, race numbers, results, odds, jockeys, trainers, or payouts. If this is not clearly a horse-racing slip, or the horse name and racecourse cannot be read, return JSON with success false, isHorseRacingTicket false when not a racing slip (true only when clearly a racing slip), and empty strings for unknown fields. Never infer a WIN/PLACE/LOST result from a bet slip alone; unless an official result is visible, finishStatus must be UNKNOWN and finishPosition null. Return only a valid JSON object with keys success, isHorseRacingTicket, detectedHorseName, detectedHorseNameSi, detectedTrack, detectedTrackSi, raceDate, raceNumber, betType, finishPosition, finishStatus, margin, odds, payout, jockey, trainer, confidenceScore, extractedRawText, sinhalaExplanation, englishExplanation. Use empty strings for unknown text and null for unknown finishPosition.',
+            },
+          ],
         }),
       }
     );
 
     const result = await aiResponse.json() as any;
-
     if (!aiResponse.ok) {
       console.error('[RaceScan Gemini error]', JSON.stringify({
         status: aiResponse.status,
@@ -146,8 +141,11 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
       }, { status: 502 });
     }
 
-    const text = result?.candidates?.[0]?.content?.parts
-      ?.map((part: { text?: string }) => part.text || '')
+    const text = (result?.steps || [])
+      .filter((step: any) => step.type === 'model_output')
+      .flatMap((step: any) => step.content || [])
+      .filter((part: any) => part.type === 'text')
+      .map((part: any) => part.text || '')
       .join('');
 
     if (!text) {
@@ -159,7 +157,8 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
 
     let parsed: any;
     try {
-      parsed = JSON.parse(text);
+      const cleanedText = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+      parsed = JSON.parse(cleanedText);
     } catch {
       return Response.json({
         success: false,
@@ -172,18 +171,15 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
       parsedAsJson: true,
       isHorseRacingTicket: parsed.isHorseRacingTicket ?? null,
       horseNamePresent: Boolean(
-        typeof parsed.detectedHorseName === 'string' &&
-        parsed.detectedHorseName.trim()
+        typeof parsed.detectedHorseName === 'string' && parsed.detectedHorseName.trim()
       ),
       trackNamePresent: Boolean(
-        typeof parsed.detectedTrack === 'string' &&
-        parsed.detectedTrack.trim()
+        typeof parsed.detectedTrack === 'string' && parsed.detectedTrack.trim()
       ),
       rawTextPresent: Boolean(
-        typeof parsed.extractedRawText === 'string' &&
-        parsed.extractedRawText.trim()
+        typeof parsed.extractedRawText === 'string' && parsed.extractedRawText.trim()
       ),
-      confidenceScore: parsed.confidenceScore ?? null
+      confidenceScore: parsed.confidenceScore ?? null,
     }));
 
     const horseName = typeof parsed.detectedHorseName === 'string'
