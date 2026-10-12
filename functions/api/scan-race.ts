@@ -163,6 +163,25 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
       }, { status: 422 });
     }
 
+    console.log('[RaceScan diagnostic]', JSON.stringify({
+      candidateReceived: Boolean(text),
+      parsedAsJson: true,
+      isHorseRacingTicket: parsed.isHorseRacingTicket ?? null,
+      horseNamePresent: Boolean(
+        typeof parsed.detectedHorseName === 'string' &&
+        parsed.detectedHorseName.trim()
+      ),
+      trackNamePresent: Boolean(
+        typeof parsed.detectedTrack === 'string' &&
+        parsed.detectedTrack.trim()
+      ),
+      rawTextPresent: Boolean(
+        typeof parsed.extractedRawText === 'string' &&
+        parsed.extractedRawText.trim()
+      ),
+      confidenceScore: parsed.confidenceScore ?? null
+    }));
+
     const horseName = typeof parsed.detectedHorseName === 'string'
       ? parsed.detectedHorseName.trim()
       : '';
