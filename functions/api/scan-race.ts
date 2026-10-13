@@ -93,7 +93,10 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
 
       return Response.json(
         { success: false, error: 'Sample ticket not found.' },
-        { status:
+        { status: 404 }
+      );
+    }
+
     const cleanBase64 = imageBase64!.replace(/^data:[^;]+;base64,/, '');
 
     const scanPrompt = 'Analyze this image carefully. First decide whether it visibly contains a horse-racing betting slip or horse-racing result document. Handwritten slips are allowed: read handwriting cautiously and use only text you can actually see. Do not invent or guess horse names, racecourses, dates, race numbers, results, odds, jockeys, trainers, or payouts. If this is not clearly a horse-racing slip, or the horse name and racecourse cannot be read, return JSON with success false, isHorseRacingTicket false when not a racing slip (true only when clearly a racing slip), and empty strings for unknown fields. Never infer a WIN/PLACE/LOST result from a bet slip alone; unless an official result is visible, finishStatus must be UNKNOWN and finishPosition null. Return only a valid JSON object with keys success, isHorseRacingTicket, detectedHorseName, detectedHorseNameSi, detectedTrack, detectedTrackSi, raceDate, raceNumber, betType, finishPosition, finishStatus, margin, odds, payout, jockey, trainer, confidenceScore, extractedRawText, sinhalaExplanation, englishExplanation. Use empty strings for unknown text and null for unknown finishPosition.';
@@ -212,8 +215,6 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
         .map((part: any) => part.text || '')
         .join('');
     }
-|| '')
-      .join('');
 
     if (!text) {
       return Response.json(
