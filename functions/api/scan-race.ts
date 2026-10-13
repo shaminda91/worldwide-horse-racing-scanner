@@ -2,6 +2,7 @@ import { WORLDWIDE_RACES } from '../../src/data/racingFixtures';
 
 interface Env {
   GEMINI_API_KEY?: string;
+  OPENROUTER_API_KEY?: string;
 }
 
 interface PagesContext {
@@ -73,9 +74,10 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
       mimeType?: string;
       sampleId?: string;
       clientLang?: string;
+     scanEngine?: 'gemini' | 'openrouter'; 
     };
 
-    const { imageBase64, mimeType = 'image/jpeg', sampleId } = body;
+    const { imageBase64, mimeType = 'image/jpeg', sampleId, scanEngine = 'gemini' } = body;
 
     if (!imageBase64 && !sampleId) {
       return Response.json(
@@ -91,61 +93,126 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
 
       return Response.json(
         { success: false, error: 'Sample ticket not found.' },
-        { status: 404 }
-      );
-    }
-
-    if (!env.GEMINI_API_KEY) {
-      return Response.json({
-        success: false,
-        error: 'Photo scanning is not configured yet. Add GEMINI_API_KEY in Cloudflare Pages Settings → Variables and Secrets.',
-      }, { status: 503 });
-    }
-
+        { status:
     const cleanBase64 = imageBase64!.replace(/^data:[^;]+;base64,/, '');
 
-    const aiResponse = await fetch(
-      'https://generativelanguage.googleapis.com/v1beta/interactions',
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': env.GEMINI_API_KEY,
-        },
-        body: JSON.stringify({
-          model: 'gemini-3.6-flash',
-          input: [
-            {
-              type: 'image',
-              mime_type: mimeType,
-              data: cleanBase64,
-            },
-            {
-              type: 'text',
-              text: 'Analyze this image carefully. First decide whether it visibly contains a horse-racing betting slip or horse-racing result document. Handwritten slips are allowed: read handwriting cautiously and use only text you can actually see. Do not invent or guess horse names, racecourses, dates, race numbers, results, odds, jockeys, trainers, or payouts. If this is not clearly a horse-racing slip, or the horse name and racecourse cannot be read, return JSON with success false, isHorseRacingTicket false when not a racing slip (true only when clearly a racing slip), and empty strings for unknown fields. Never infer a WIN/PLACE/LOST result from a bet slip alone; unless an official result is visible, finishStatus must be UNKNOWN and finishPosition null. Return only a valid JSON object with keys success, isHorseRacingTicket, detectedHorseName, detectedHorseNameSi, detectedTrack, detectedTrackSi, raceDate, raceNumber, betType, finishPosition, finishStatus, margin, odds, payout, jockey, trainer, confidenceScore, extractedRawText, sinhalaExplanation, englishExplanation. Use empty strings for unknown text and null for unknown finishPosition.',
-            },
-          ],
-        }),
+    const scanPrompt = 'Analyze this image carefully. First decide whether it visibly contains a horse-racing betting slip or horse-racing result document. Handwritten slips are allowed: read handwriting cautiously and use only text you can actually see. Do not invent or guess horse names, racecourses, dates, race numbers, results, odds, jockeys, trainers, or payouts. If this is not clearly a horse-racing slip, or the horse name and racecourse cannot be read, return JSON with success false, isHorseRacingTicket false when not a racing slip (true only when clearly a racing slip), and empty strings for unknown fields. Never infer a WIN/PLACE/LOST result from a bet slip alone; unless an official result is visible, finishStatus must be UNKNOWN and finishPosition null. Return only a valid JSON object with keys success, isHorseRacingTicket, detectedHorseName, detectedHorseNameSi, detectedTrack, detectedTrackSi, raceDate, raceNumber, betType, finishPosition, finishStatus, margin, odds, payout, jockey, trainer, confidenceScore, extractedRawText, sinhalaExplanation, englishExplanation. Use empty strings for unknown text and null for unknown finishPosition.';
+
+    let text = '';
+
+    if (scanEngine === 'openrouter') {
+      if (!env.OPENROUTER_API_KEY) {
+        return Response.json({
+          success: false,
+          error: 'OpenRouter is not configured. Add OPENROUTER_API_KEY in Cloudflare Pages Settings → Variables and Secrets.',
+        }, { status: 503 });
       }
-    );
 
-    const result = await aiResponse.json() as any;
-    if (!aiResponse.ok) {
-      console.error('[RaceScan Gemini error]', JSON.stringify({
-        status: aiResponse.status,
-        message: result?.error?.message || 'No error message returned',
-      }));
-      return Response.json({
-        success: false,
-        error: result?.error?.message || 'Gemini API request failed',
-      }, { status: 502 });
+      const aiResponse = await fetch(
+        'https://openrouter.ai/api/v1/chat/completions',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`,
+            'HTTP-Referer': 'https://worldwide-horse-racing-scanner.pages.dev',
+            'X-Title': 'Worldwide Horse Racing Scanner',
+          },
+          body: JSON.stringify({
+            model: 'openrouter/free',
+            messages: [{
+              role: 'user',
+              content: [
+                {
+                  type: 'image_url',
+                  image_url: {
+                    url: `data:${mimeType};base64,${cleanBase64}`,
+                  },
+                },
+                {
+                  type: 'text',
+                  text: scanPrompt,
+                },
+              ],
+            }],
+          }),
+        }
+      );
+
+      const result = await aiResponse.json() as any;
+
+      if (!aiResponse.ok) {
+        console.error('[RaceScan OpenRouter error]', JSON.stringify({
+          status: aiResponse.status,
+          message: result?.error?.message || 'No error message returned',
+        }));
+        return Response.json({
+          success: false,
+          error: result?.error?.message || 'OpenRouter API request failed',
+        }, { status: 502 });
+      }
+
+      const content = result?.choices?.[0]?.message?.content;
+      text = typeof content === 'string'
+        ? content
+        : Array.isArray(content)
+          ? content.filter((part: any) => part.type === 'text')
+              .map((part: any) => part.text || '').join('')
+          : '';
+    } else {
+      if (!env.GEMINI_API_KEY) {
+        return Response.json({
+          success: false,
+          error: 'Photo scanning is not configured yet. Add GEMINI_API_KEY in Cloudflare Pages Settings → Variables and Secrets.',
+        }, { status: 503 });
+      }
+
+      const aiResponse = await fetch(
+        'https://generativelanguage.googleapis.com/v1beta/interactions',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': env.GEMINI_API_KEY,
+          },
+          body: JSON.stringify({
+            model: 'gemini-3.6-flash',
+            input: [
+              {
+                type: 'image',
+                mime_type: mimeType,
+                data: cleanBase64,
+              },
+              {
+                type: 'text',
+                text: scanPrompt,
+              },
+            ],
+          }),
+        }
+      );
+
+      const result = await aiResponse.json() as any;
+
+      if (!aiResponse.ok) {
+        console.error('[RaceScan Gemini error]', JSON.stringify({
+          status: aiResponse.status,
+          message: result?.error?.message || 'No error message returned',
+        }));
+        return Response.json({
+          success: false,
+          error: result?.error?.message || 'Gemini API request failed',
+        }, { status: 502 });
+      }
+
+      text = (result?.steps || [])
+        .filter((step: any) => step.type === 'model_output')
+        .flatMap((step: any) => step.content || [])
+        .filter((part: any) => part.type === 'text')
+        .map((part: any) => part.text || '')
+        .join('');
     }
-
-    const text = (result?.steps || [])
-      .filter((step: any) => step.type === 'model_output')
-      .flatMap((step: any) => step.content || [])
-      .filter((part: any) => part.type === 'text')
-      .map((part: any) => part.text || '')
+|| '')
       .join('');
 
     if (!text) {

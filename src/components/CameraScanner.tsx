@@ -5,6 +5,7 @@ import { PRESET_SAMPLE_SLIPS } from '../data/racingFixtures';
 import { getTranslation } from '../locales/translations';
 import { sfx } from '../utils/audio';
 import { processPhonePhoto } from '../utils/imageCompressor';
+import { readHorseTicketText } from '../utils/horseTicketOcr';
 
 interface CameraScannerProps {
   currentLang: Language;
@@ -40,6 +41,13 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
   const [isScanning, setIsScanning] = useState<boolean>(false);
   const [scanStep, setScanStep] = useState<number>(0);
   const [selectedPreset, setSelectedPreset] = useState<PresetSampleSlip | null>(null);
+  
+const [scanEngine, setScanEngine] = useState<
+  'gemini' | 'openrouter' | 'ocr'
+>('ocr');
+  const [ocrText, setOcrText] = useState<string>('');
+  const [ocrProgress, setOcrProgress] = useState<number>(0);
+
 
   // Auto-trigger if a preset was passed
   useEffect(() => {
@@ -196,8 +204,28 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
     });
   };
 
-  // Send to server API
+  // Send to OCR locally or Gemini server API
   const executeScanApi = async (payload: any) => {
+    if (scanEngine === 'ocr' && payload.imageBase64) {
+      try {
+        sfx.playScanBlip();
+        setOcrText('');
+        setOcrProgress(0);
+        const text = await readHorseTicketText(
+          payload.imageBase64,
+          setOcrProgress,
+        );
+        setOcrText(text || '(No text recognized)');
+      } catch (err) {
+        console.error('Local OCR failed:', err);
+        setOcrText('OCR failed. Try a clearer photo.');
+      } finally {
+        setIsScanning(false);
+        setScanStep(0);
+      }
+      return;
+    }
+
     try {
       sfx.playScanBlip();
       setTimeout(() => setScanStep(2), 500);
@@ -206,7 +234,7 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
       const response = await fetch('/api/scan-race', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
+        body: JSON.stringify({ ...payload, scanEngine }),
       });
 
       const data = await response.json();
@@ -295,6 +323,77 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
           </button>
         </div>
       </div>
+
+      {/* OCR / Gemini Engine Selector */}
+      <div className="w-full max-w-md px-4 mb-3">
+        <p className="text-xs text-slate-300 mb-2">
+          {currentLang === 'si' ? 'Scan ක්‍රමය' : 'Scanning Engine'}
+        </p>
+        <div className="grid grid-cols-3 gap-2">
+          <button
+            type="button"
+            onClick={() => setScanEngine('ocr')}
+            className={`py-2.5 rounded-xl border text-xs font-bold ${
+              scanEngine === 'ocr'
+                ? 'bg-[#0e6245] text-white border-[#1b8863]'
+                : 'bg-[#0b1c14] text-slate-300 border-[#163828]'
+            }`}
+          >
+            OCR (No API)
+          </button>
+          <button
+            type="button"
+            onClick={() => setScanEngine('gemini')}
+            className={`py-2.5 rounded-xl border text-xs font-bold ${
+              scanEngine === 'gemini'
+                ? 'bg-[#0e6245] text-white border-[#1b8863]'
+                : 'bg-[#0b1c14] text-slate-300 border-[#163828]'
+            }`}
+          >
+            Gemini API
+          </button>
+          <button
+            type="button"
+            onClick={() => setScanEngine('openrouter')}
+            className={`py-2.5 rounded-xl border text-xs font-bold ${
+              scanEngine === 'openrouter'
+                ? 'bg-[#0e6245] text-white border-[#1b8863]'
+                : 'bg-[#0b1c14] text-slate-300 border-[#163828]'
+            }`}
+          >
+            OpenRouter AI
+          </button>
+
+
+        </div>
+      </div>
+
+      {ocrText !== '' && (
+        <div className="w-full max-w-md px-4 mb-4">
+          <div className="rounded-xl border border-[#1e4d37] bg-[#0b1c14] p-3">
+            <h3 className="text-sm font-bold text-white mb-2">
+              {currentLang === 'si' ? 'OCR මඟින් කියවූ පෙළ' : 'OCR Recognized Text'}
+            </h3>
+            {isScanning && (
+              <p className="text-xs text-emerald-300 mb-2">
+                {`Reading: ${Math.round(ocrProgress * 100)}%`}
+              </p>
+            )}
+            <textarea
+              value={ocrText}
+              onChange={(e) => setOcrText(e.target.value)}
+              rows={7}
+              className="w-full rounded-lg bg-black/40 border border-[#1d4d38] p-2 text-sm text-white"
+              aria-label="OCR recognized text"
+            />
+            <p className="text-xs text-slate-400 mt-2">
+              {currentLang === 'si'
+                ? 'මෙය OCR පෙළ පමණයි. තහවුරු කළ race result එකක් නොවේ.'
+                : 'This is OCR text only, not a verified race result.'}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* MODE 1: PHONE PHOTOS / GALLERY (Prominent & Easy) */}
       {scanMode === 'gallery' && (
@@ -542,9 +641,11 @@ export const CameraScanner: React.FC<CameraScannerProps> = ({
             <button
               key={sample.id}
               onClick={() => handleTriggerSample(sample)}
-              disabled={isScanning}
+              disabled={isScanning || scanEngine === 'ocr'}
               className={`text-left p-3 rounded-xl border transition-all cursor-pointer min-h-[64px] flex flex-col justify-between ${
-                selectedPreset?.id === sample.id
+                scanEngine === 'ocr'
+                  ? 'opacity-40 cursor-not-allowed'
+                  : selectedPreset?.id === sample.id
                   ? 'bg-[#0f2c1f] border-[#1c553c] text-white'
                   : 'bg-[#0b1c14] hover:bg-[#102b1f] border-[#163828] text-slate-200'
               }`}
