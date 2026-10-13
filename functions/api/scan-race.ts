@@ -156,6 +156,15 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
       }
 
       const content = result?.choices?.[0]?.message?.content;
+      console.log('[RaceScan OpenRouter diagnostic]', JSON.stringify({
+        model: result?.model ?? null,
+        finishReason: result?.choices?.[0]?.finish_reason ?? null,
+        contentType: typeof content,
+        contentIsArray: Array.isArray(content),
+        contentLength: typeof content === 'string' ? content.length :
+          Array.isArray(content) ? content.reduce((n: number, part: any) =>
+            n + (typeof part?.text === 'string' ? part.text.length : 0), 0) : 0,
+      }));
       text = typeof content === 'string'
         ? content
         : Array.isArray(content)
