@@ -269,6 +269,13 @@ export const onRequestPost = async ({ request, env }: PagesContext) => {
       ? parsed.extractedRawText.trim()
       : '';
 
+    console.log('[RaceScan validation failure]', JSON.stringify({
+      rejectedAsNotTicket: parsed.isHorseRacingTicket === false,
+      missingHorseName: !horseName,
+      missingTrackName: !trackName,
+      missingRawText: !rawText,
+    }));
+
     if (
       parsed.isHorseRacingTicket === false ||
       !horseName ||
